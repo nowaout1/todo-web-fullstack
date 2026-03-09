@@ -9,12 +9,18 @@ axum = { version = "0.8.8", features = ["macros"] }
 dotenvy = "0.15.7"
 eyre = "0.6.12"
 serde = { version = "1.0.228", features = ["serde_derive"] }
+serde_json = "1.0.149"
+serde_with = "3.17.0"
 sqlx = { version = "0.8.6", features = ["runtime-tokio", "postgres", "uuid", "time"] }
 thiserror = "2.0.18"
-time = "0.3.47"
+time = { version = "0.3.47", features = ["serde"] }
 tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
 tower = { version = "0.5.3", features = ["timeout"] }
-tower-http = { version = "0.6.8", features = ["trace"] }
+tower-http = { version = "0.6.8", features = ["cors", "trace"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
-uuid = { version = "1.20.0", features = ["v7"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3

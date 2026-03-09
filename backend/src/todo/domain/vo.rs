@@ -1,13 +1,13 @@
 pub mod date;
 pub mod id;
-pub mod limit;
-pub mod offset;
+pub mod pagination;
 pub mod query;
+pub mod sort;
 pub mod title;
 
 pub use date::Date;
 pub use id::{Id, IdParseError};
-pub use limit::{Limit, LimitError};
-pub use offset::{Offset, OffsetError};
+pub use pagination::{Cursor, CursorError, Limit, LimitError, Pagination};
 pub use query::{Query, QueryError};
+pub use sort::{Sort, SortField, SortOrder};
 pub use title::{Title, TitleError};

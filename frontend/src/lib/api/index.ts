@@ -1,4 +1,4 @@
-import { createApi } from '$lib/utils/api-utils';
+import type { Todo } from '$lib/model';
 
 export type TodoDto = {
 	id: string;
@@ -6,29 +6,28 @@ export type TodoDto = {
 	created_at: string;
 };
 
-const API_URL = import.meta.env.VITE_API_URL;
+export const todoDtoToModel = (dto: TodoDto): Todo => ({
+	id: dto.id,
+	title: dto.title,
+	createdAt: new Date(dto.created_at)
+});
 
-if (API_URL == null) {
-	throw new Error('Todo api error: `API_URL` not specified');
-}
+export const fetchTodos = async (
+	{ cursor }: { cursor?: string | number | null } = {},
+	fetch = window.fetch
+) => {
+	const apiUrl = new URL('http://localhost:8080/api/v1/todos');
 
-const request = createApi(API_URL);
+	if (cursor && Number.isInteger(cursor)) {
+		apiUrl.searchParams.append('cursor', cursor.toString());
+	}
 
-export const fetchTodos = async () => {
-	const response = await request('/todos', { offset: 0 }, { method: 'GET' }).then((res) =>
-		res.json()
-	);
-	console.log(response);
-};
+	const { todos, next_cursor } = await fetch(apiUrl, {
+		method: 'GET'
+	}).then((res) => res.json());
 
-export const fetchTodoById = async () => {
-	request('/todos', { id: '123' }, { method: 'GET' });
-};
-
-export const createTodo = async (title: string) => {
-	request('/todos', {}, { method: 'POST' });
-};
-
-export const deleteTodoById = async (id: string) => {
-	request('/todos', {}, { method: 'DELETE' });
+	return {
+		todos: todos.map(todoDtoToModel),
+		nextCursor: next_cursor
+	};
 };

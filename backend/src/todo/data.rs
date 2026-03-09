@@ -1,38 +1,34 @@
 use async_trait::async_trait;
-use sqlx::{PgPool, postgres::PgPoolOptions, types::time::OffsetDateTime};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 
 use crate::todo::{
-    entity::Todo,
-    repository::{
-        CreateTodoCommand, DeleteTodoByIdCommand, FetchRecentTodosQuery, FetchTodoByIdQuery,
-        SearchTodosQuery, TodoRepository, TodoRepositoryError,
+    application::repository::{
+        CreateTodoCommand, DeleteTodoByIdCommand, FetchRecentTodosQuery, FetchRecentTodosResponse,
+        FetchTodoByIdQuery, SearchTodosQuery, SearchTodosResponse, TodoRepository,
+        TodoRepositoryError,
     },
-    vo::{Date, Id, Title},
+    domain::{Cursor, Limit, entity::Todo},
 };
+use dto::TodoDto;
 
-impl From<sqlx::Error> for TodoRepositoryError {
-    fn from(value: sqlx::Error) -> Self {
-        // TODO: refactor me
+mod dto;
+mod error;
 
-        let error = eyre::eyre!(value);
-        TodoRepositoryError::Database(error)
-    }
-}
+mod utils {
+    use crate::todo::domain::{Cursor, Id, Todo};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TodoDto {
-    id: String,
-    title: String,
-    created_at: OffsetDateTime,
-}
+    pub fn compute_next_cursor(todos: &[Todo], limit: impl Into<usize>) -> Option<Cursor> {
+        let no_more = todos.len() < limit.into();
 
-impl TodoDto {
-    pub fn to_entity(&self) -> Todo {
-        let id = Id::new_unchecked(&self.id);
-        let title = Title::new_unchecked(&self.title);
-        let created_at = Date::new(self.created_at);
+        if no_more {
+            return None;
+        }
 
-        Todo::from_parts(id, title, created_at)
+        todos
+            .last()
+            .map(Todo::id)
+            .map(Id::into_inner)
+            .map(Cursor::new_unchecked)
     }
 }
 
@@ -44,9 +40,11 @@ pub struct TodoPostgres {
 impl TodoPostgres {
     pub async fn new(addr: &str) -> Result<Self, sqlx::Error> {
         let pool = PgPoolOptions::new()
-            .max_connections(5)
+            .max_connections(50)
             .connect(addr)
             .await?;
+
+        sqlx::migrate!("./migrations").run(&pool).await?;
 
         Ok(Self { pool })
     }
@@ -58,7 +56,7 @@ impl TodoRepository for TodoPostgres {
         &self,
         input: FetchTodoByIdQuery,
     ) -> Result<Option<Todo>, TodoRepositoryError> {
-        let id = input.id().into_inner();
+        let id = input.id().as_usize();
 
         let query = sqlx::query_as!(
             TodoDto,
@@ -68,7 +66,7 @@ impl TodoRepository for TodoPostgres {
                 WHERE id = $1
                 LIMIT 1
             "#,
-            id
+            id as i64
         );
 
         let result = query
@@ -83,82 +81,115 @@ impl TodoRepository for TodoPostgres {
     async fn fetch_recent_todos(
         &self,
         input: FetchRecentTodosQuery,
-    ) -> Result<Vec<Todo>, TodoRepositoryError> {
-        let offset = input.offset().into_inner();
-        let limit = input.limit().into_inner();
+    ) -> Result<FetchRecentTodosResponse, TodoRepositoryError> {
+        let pagination = input.pagination();
+        let cursor = pagination.cursor().map(Cursor::into_inner);
+        let limit = pagination.limit().map(Limit::into_inner).unwrap_or(20);
 
-        let query = sqlx::query_as!(
-            TodoDto,
-            r#"
-                SELECT id, title, created_at
-                FROM todos
-                ORDER BY created_at DESC
-                OFFSET $1
-                LIMIT $2
-            "#,
-            offset as i32,
-            limit as i32
-        );
+        let todos = match cursor {
+            Some(cursor) => {
+                sqlx::query_as!(
+                    TodoDto,
+                    r#"
+                    SELECT id, title, created_at
+                    FROM todos
+                    WHERE id < $1
+                    ORDER BY id DESC
+                    LIMIT $2
+                "#,
+                    cursor as i64,
+                    limit as i64
+                )
+                .fetch_all(&self.pool)
+                .await?
+            }
+            None => {
+                sqlx::query_as!(
+                    TodoDto,
+                    r#"
+                    SELECT id, title, created_at
+                    FROM todos
+                    ORDER BY id DESC
+                    LIMIT $1
+                "#,
+                    limit as i64
+                )
+                .fetch_all(&self.pool)
+                .await?
+            }
+        };
 
-        let result = query
-            .fetch_all(&self.pool)
-            .await?
-            .iter()
-            .map(TodoDto::to_entity)
-            .collect();
+        let todos = todos.iter().map(TodoDto::to_entity).collect::<Vec<_>>();
+        let next_cursor = utils::compute_next_cursor(&todos, limit);
+        let response = FetchRecentTodosResponse::new(todos, next_cursor);
 
-        Ok(result)
+        Ok(response)
     }
 
     async fn search_todos(
         &self,
         input: SearchTodosQuery,
-    ) -> Result<Vec<Todo>, TodoRepositoryError> {
+    ) -> Result<SearchTodosResponse, TodoRepositoryError> {
         let query = input.query().as_str();
-        let offset = input.offset().into_inner();
-        let limit = input.limit().into_inner();
+        let pagination = input.pagination();
+        let cursor = pagination.cursor().map(Cursor::into_inner);
+        let limit = pagination.limit().map(Limit::into_inner).unwrap_or(20);
 
-        let query = sqlx::query_as!(
-            TodoDto,
-            r#"
-                SELECT id, title, created_at
-                FROM todos
-                WHERE title ILIKE '%' || $1 || '%'
-                ORDER BY created_at DESC
-                OFFSET $2
-                LIMIT $3
-            "#,
-            query,
-            offset as i32,
-            limit as i32
-        );
+        let todos = match cursor {
+            Some(cursor) => {
+                sqlx::query_as!(
+                    TodoDto,
+                    r#"
+                    SELECT id, title, created_at
+                    FROM todos
+                    WHERE id < $2
+                    AND title ILIKE '%' || $1 || '%'
+                    ORDER BY id DESC
+                    LIMIT $3
+                "#,
+                    query,
+                    cursor as i64,
+                    limit as i64
+                )
+                .fetch_all(&self.pool)
+                .await?
+            }
+            None => {
+                sqlx::query_as!(
+                    TodoDto,
+                    r#"
+                    SELECT id, title, created_at
+                    FROM todos
+                    WHERE title ILIKE '%' || $1 || '%'
+                    ORDER BY id DESC
+                    LIMIT $2
+                "#,
+                    query,
+                    limit as i64
+                )
+                .fetch_all(&self.pool)
+                .await?
+            }
+        };
 
-        let result = query
-            .fetch_all(&self.pool)
-            .await?
-            .iter()
-            .map(TodoDto::to_entity)
-            .collect();
+        let todos = todos.iter().map(TodoDto::to_entity).collect::<Vec<_>>();
+        let next_cursor = utils::compute_next_cursor(&todos, limit);
+        let response = SearchTodosResponse::new(todos, next_cursor);
 
-        Ok(result)
+        Ok(response)
     }
 
     async fn create_todo(&self, input: CreateTodoCommand) -> Result<Todo, TodoRepositoryError> {
-        let todo = input.todo();
-        let id = todo.id().into_inner();
-        let title = todo.title().to_string();
-        let created_at = todo.created_at().into_inner();
+        let title = input.title().as_str();
 
         let query = sqlx::query_as!(
             TodoDto,
             r#"
-                INSERT INTO todos (id, title, created_at)
-                VALUES ($1, $2, $3)
+                INSERT INTO todos (title)
+                VALUES ($1)
                 RETURNING id, title, created_at
             "#,
-            id,
             title,
-            created_at
         );
 
         let result = query.fetch_one(&self.pool).await?.to_entity();
@@ -170,14 +201,14 @@ impl TodoRepository for TodoPostgres {
         &self,
         input: DeleteTodoByIdCommand,
     ) -> Result<(), TodoRepositoryError> {
-        let id = input.id().into_inner();
+        let id = input.id().as_usize();
 
         let query = sqlx::query!(
             r#"
                 DELETE FROM todos
                 WHERE id = $1
             "#,
-            id
+            id as i64
         );
 
         query.execute(&self.pool).await?;

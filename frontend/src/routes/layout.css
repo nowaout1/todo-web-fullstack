@@ -1,1 +1,25 @@
 @import 'tailwindcss';
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+:root {
+	--accent: black;
+	--background: white;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--accent: white;
+		--background: black;
+	}
+}
+
+@layer base {
+	body {
+		color: var(--accent);
+		accent-color: var(--accent);
+		background: var(--background);
+	}
+}

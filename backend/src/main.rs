@@ -1,12 +1,25 @@
 use std::time::Duration;
 
 use axum::{
-    Router, error_handling::HandleErrorLayer, http::StatusCode, response::IntoResponse,
+    Router,
+    error_handling::HandleErrorLayer,
+    http::{
+        Method, StatusCode,
+        header::{
+            ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
+            ACCESS_CONTROL_ALLOW_ORIGIN, AUTHORIZATION, CONTENT_TYPE, ORIGIN,
+        },
+    },
+    response::IntoResponse,
     routing::get,
 };
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
-use tower_http::{BoxError, trace::TraceLayer};
+use tower_http::{
+    BoxError,
+    cors::{Any, CorsLayer},
+    trace::TraceLayer,
+};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::todo::create_todos_router;
@@ -42,6 +55,25 @@ async fn main() -> eyre::Result<()> {
             }))
             .timeout(Duration::from_secs(10))
             .layer(TraceLayer::new_for_http())
+            .layer(
+                CorsLayer::new()
+                    .allow_origin(Any)
+                    .allow_headers([
+                        ORIGIN,
+                        CONTENT_TYPE,
+                        AUTHORIZATION,
+                        ACCESS_CONTROL_ALLOW_ORIGIN,
+                        ACCESS_CONTROL_ALLOW_HEADERS,
+                        ACCESS_CONTROL_ALLOW_METHODS,
+                    ])
+                    .allow_methods([
+                        Method::GET,
+                        Method::POST,
+                        Method::PUT,
+                        Method::DELETE,
+                        Method::OPTIONS,
+                    ]),
+            )
             .into_inner();
 
         let router = Router::new()

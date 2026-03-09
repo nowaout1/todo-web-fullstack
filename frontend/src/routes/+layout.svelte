@@ -5,5 +5,10 @@
 	let { children } = $props();
 </script>
 
-<svelte:head><link rel="icon" href={favicon} /></svelte:head>
-{@render children()}
+<svelte:head>
+	<link rel="icon" href={favicon} />
+</svelte:head>
+
+<main class="grid h-screen items-center justify-center">
+	{@render children()}
+</main>

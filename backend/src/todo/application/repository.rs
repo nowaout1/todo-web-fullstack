@@ -1,13 +1,11 @@
 use async_trait::async_trait;
 use thiserror::Error;
 
-use crate::todo::{
+use crate::todo::domain::{
+    Cursor, Title,
     entity::Todo,
-    vo::{Date, Id, Limit, Offset, Query, Title},
+    vo::{Id, Pagination, Query, Sort},
 };
-
-pub type FetchOffset = Offset<0, { usize::MAX }>;
-pub type FetchLimit = Limit<1, 32>;
 
 #[derive(Error, Debug)]
 pub enum TodoRepositoryError {
@@ -30,6 +28,21 @@ pub enum TodoRepositoryError {
     Connection(#[source] eyre::Error),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CreateTodoCommand {
+    title: Title,
+}
+
+impl CreateTodoCommand {
+    pub fn new(title: Title) -> Self {
+        Self { title }
+    }
+
+    pub fn title(&self) -> &Title {
+        &self.title
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FetchTodoByIdQuery {
     id: Id,
@@ -47,37 +60,56 @@ impl FetchTodoByIdQuery {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FetchRecentTodosQuery {
-    offset: FetchOffset,
-    limit: FetchLimit,
+    pagination: Pagination,
 }
 
 impl FetchRecentTodosQuery {
-    pub fn new(offset: FetchOffset, limit: FetchLimit) -> Self {
-        Self { offset, limit }
+    pub fn new(pagination: Pagination) -> Self {
+        Self { pagination }
     }
 
-    pub fn offset(&self) -> &FetchOffset {
-        &self.offset
+    pub fn pagination(&self) -> Pagination {
+        self.pagination
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FetchRecentTodosResponse {
+    todos: Vec<Todo>,
+    next_cursor: Option<Cursor>,
+}
+
+impl FetchRecentTodosResponse {
+    pub fn new(todos: Vec<Todo>, next_cursor: Option<Cursor>) -> Self {
+        Self { todos, next_cursor }
     }
 
-    pub fn limit(&self) -> &FetchLimit {
-        &self.limit
+    pub fn todos(&self) -> &[Todo] {
+        &self.todos[..]
+    }
+
+    pub fn next_cursor(&self) -> Option<&Cursor> {
+        self.next_cursor.as_ref()
+    }
+
+    pub fn has_next(&self) -> bool {
+        self.next_cursor().is_some()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SearchTodosQuery {
     query: Query,
-    offset: FetchOffset,
-    limit: FetchLimit,
+    pagination: Pagination,
+    sort: Sort,
 }
 
 impl SearchTodosQuery {
-    pub fn new(query: Query, offset: FetchOffset, limit: FetchLimit) -> Self {
+    pub fn new(query: Query, pagination: Pagination, sort: Sort) -> Self {
         Self {
             query,
-            offset,
-            limit,
+            pagination,
+            sort,
         }
     }
 
@@ -85,27 +117,32 @@ impl SearchTodosQuery {
         &self.query
     }
 
-    pub fn offset(&self) -> &FetchOffset {
-        &self.offset
+    pub fn pagination(&self) -> Pagination {
+        self.pagination
     }
 
-    pub fn limit(&self) -> &FetchLimit {
-        &self.limit
+    pub fn sort(&self) -> Sort {
+        self.sort
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CreateTodoCommand {
-    todo: Todo,
+pub struct SearchTodosResponse {
+    todos: Vec<Todo>,
+    next_cursor: Option<Cursor>,
 }
 
-impl CreateTodoCommand {
-    pub fn new(todo: Todo) -> Self {
-        Self { todo }
+impl SearchTodosResponse {
+    pub fn new(todos: Vec<Todo>, next_cursor: Option<Cursor>) -> Self {
+        Self { todos, next_cursor }
     }
 
-    pub fn todo(&self) -> &Todo {
-        &self.todo
+    pub fn todos(&self) -> &[Todo] {
+        &self.todos[..]
+    }
+
+    pub fn next_cursor(&self) -> Option<&Cursor> {
+        self.next_cursor.as_ref()
     }
 }
 
@@ -133,9 +170,11 @@ pub trait TodoRepository {
     async fn fetch_recent_todos(
         &self,
         input: FetchRecentTodosQuery,
-    ) -> Result<Vec<Todo>, TodoRepositoryError>;
-    async fn search_todos(&self, input: SearchTodosQuery)
-    -> Result<Vec<Todo>, TodoRepositoryError>;
+    ) -> Result<FetchRecentTodosResponse, TodoRepositoryError>;
+    async fn search_todos(
+        &self,
+        input: SearchTodosQuery,
+    ) -> Result<SearchTodosResponse, TodoRepositoryError>;
     async fn create_todo(&self, input: CreateTodoCommand) -> Result<Todo, TodoRepositoryError>;
     async fn delete_todo_by_id(
         &self,

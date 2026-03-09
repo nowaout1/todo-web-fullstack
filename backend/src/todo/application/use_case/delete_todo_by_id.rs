@@ -1,28 +1,23 @@
 use thiserror::Error;
 
 use crate::todo::{
-    repository::{DeleteTodoByIdCommand, TodoRepository, TodoRepositoryError},
-    vo::{Id, IdParseError},
+    application::repository::{DeleteTodoByIdCommand, TodoRepository, TodoRepositoryError},
+    domain::vo::Id,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DeleteTodoById<'a> {
-    id: &'a str,
+pub struct DeleteTodoById {
+    id: Id,
 }
 
-impl<'a> DeleteTodoById<'a> {
-    pub fn new(id: &'a str) -> Self {
+impl DeleteTodoById {
+    pub fn new(id: Id) -> Self {
         Self { id }
-    }
-    pub fn id(&self) -> &'a str {
-        self.id
     }
 }
 
 #[derive(Error, Debug)]
 pub enum DeleteTodoByIdError {
-    #[error("got invalid todo id: {0}")]
-    InvalidId(#[from] IdParseError),
     #[error("failed to delete todo: {0}")]
     Repository(#[from] TodoRepositoryError),
 }
@@ -42,10 +37,8 @@ where
 
     pub async fn execute(
         &self,
-        DeleteTodoById { id }: DeleteTodoById<'_>,
+        DeleteTodoById { id }: DeleteTodoById,
     ) -> Result<(), DeleteTodoByIdError> {
-        let id = Id::try_from(id).map_err(DeleteTodoByIdError::InvalidId)?;
-
         let command = DeleteTodoByIdCommand::new(id);
 
         self.repository

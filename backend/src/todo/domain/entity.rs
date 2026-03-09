@@ -1,4 +1,4 @@
-use crate::todo::vo::{Date, Id, Title};
+use crate::todo::domain::vo::{Date, Id, Title};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Todo {
@@ -8,18 +8,7 @@ pub struct Todo {
 }
 
 impl Todo {
-    pub fn new(title: Title) -> Self {
-        let id = Id::new();
-        let created_at = Date::now_utc();
-
-        Self {
-            id,
-            title,
-            created_at,
-        }
-    }
-
-    pub fn from_parts(id: Id, title: Title, created_at: Date) -> Self {
+    pub fn new(id: Id, title: Title, created_at: Date) -> Self {
         Self {
             id,
             title,
