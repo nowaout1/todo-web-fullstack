@@ -36,7 +36,7 @@ impl Title {
         match title.len() {
             0 => Err(TitleError::Empty),
             ..3 => Err(TitleError::TooShort),
-            20.. => Err(TitleError::TooLong),
+            50.. => Err(TitleError::TooLong),
             _ => Ok(Self(title.into())),
         }
     }

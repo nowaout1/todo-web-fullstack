@@ -30,5 +30,5 @@ pub async fn delete_todo_by_id(
         .execute(DeleteTodoById::new(id))
         .await?;
 
-    Ok(StatusCode::OK)
+    Ok(StatusCode::NO_CONTENT)
 }

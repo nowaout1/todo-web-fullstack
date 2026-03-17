@@ -25,7 +25,7 @@ pub enum AppError {
 
 impl AppError {
     pub fn text(msg: &str) -> Self {
-        Self::Validation(Json(json!(msg)))
+        Self::Validation(Json(json!({ "msg": msg })))
     }
 
     pub fn internal<E>(error: E) -> Self
